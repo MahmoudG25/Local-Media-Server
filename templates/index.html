@@ -2,259 +2,227 @@
 <html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8">
-  <title>Local Media Server</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-
-  <!-- Font -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-
-  <!-- Bootstrap للـ grid فقط (اختياري) -->
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-
-  <!-- Main CSS -->
+  <title>Media Server</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
 </head>
 <body>
-  <header class="app-navbar">
-    <div class="container d-flex align-items-center justify-content-between gap-3">
-      <div class="app-brand">
-        <div class="brand-logo">▶</div>
-        <div>
-          <div class="brand-text-main">
-            <span>Media Server</span>
-          </div>
-          <div class="brand-sub text-truncate">
-            {{ base_dir }}
-          </div>
+
+  <!-- ========== HEADER ========== -->
+  <header class="top-header">
+    <div class="header-container">
+      <div class="branding">
+        <div class="logo-icon">▶</div>
+        <div class="logo-text">
+          <h1>Media Server</h1>
+          <p>{{ base_dir }}</p>
         </div>
       </div>
-
-      <div class="app-navbar-right">
+      
+      <div class="header-right">
         {% if pw_enabled %}
-          <div class="chip chip--success">
-            <span class="chip-dot"></span>
-            <span>Auth enabled</span>
-          </div>
+          <span class="status-badge status-secure">🔒 Secured</span>
         {% else %}
-          <div class="chip chip--warning">
-            <span class="chip-dot"></span>
-            <span>Public access</span>
-          </div>
+          <span class="status-badge status-public">🌐 Public</span>
         {% endif %}
-
-        <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle dark / light mode">
-          <span class="theme-toggle-icon" data-theme-icon>🌙</span>
+        
+        <button class="theme-switcher" id="theme-toggle">
+          <span data-theme-icon>🌙</span>
           <span data-theme-label>Dark</span>
-          <span class="theme-toggle-knob"></span>
         </button>
       </div>
     </div>
   </header>
 
-  <main class="app-main">
-    <div class="container">
+  <!-- ========== MAIN CONTENT ========== -->
+  <div class="page-wrapper">
+    <div class="content-container">
 
       <!-- Breadcrumb -->
-      <nav aria-label="breadcrumb" class="mb-3">
-        <ol class="breadcrumb m-0">
-          <li class="breadcrumb-item">
-            <a href="{{ url_for('index') }}">Home</a>
-          </li>
-          {% for crumb in breadcrumbs %}
-            <li class="breadcrumb-item {% if loop.last %}active{% endif %}" {% if loop.last %}aria-current="page"{% endif %}>
-              {% if not loop.last %}
-                <a href="{{ url_for('index', p=crumb.path) }}">{{ crumb.name }}</a>
-              {% else %}
-                {{ crumb.name }}
-              {% endif %}
-            </li>
-          {% endfor %}
-        </ol>
+      <nav class="breadcrumb-nav">
+        <a href="{{ url_for('index') }}" class="crumb">🏠 Home</a>
+        {% for crumb in breadcrumbs %}
+          <span class="crumb-divider">›</span>
+          {% if loop.last %}
+            <span class="crumb crumb-active">{{ crumb.name }}</span>
+          {% else %}
+            <a href="{{ url_for('index', p=crumb.path) }}" class="crumb">{{ crumb.name }}</a>
+          {% endif %}
+        {% endfor %}
       </nav>
 
-      <!-- Top surface: filters + upload -->
-      <section class="surface mb-4">
-        <div class="row g-4">
-          <!-- Filters -->
-          <div class="col-12 col-lg-8">
-            <div class="d-flex justify-content-between align-items-center mb-3 gap-3">
-              <div class="surface-header-label">Browse & Filter</div>
-              <div class="stat-badges">
-                <div class="stat-pill">
-                  <span>Items</span><strong>{{ total_items }}</strong>
-                </div>
-                <div class="stat-pill">
-                  <span>Visible size</span><strong>{{ total_size_human }}</strong>
-                </div>
-              </div>
-            </div>
-
-            <form method="get" class="row g-2 align-items-center">
-              <input type="hidden" name="p" value="{{ current_rel }}">
-              <div class="col-12 col-md-4">
-                <input
-                  type="text"
-                  name="q"
-                  value="{{ q or '' }}"
-                  class="form-control"
-                  placeholder="Search files..."
-                  autocomplete="off"
-                >
-              </div>
-              <div class="col-6 col-md-2">
-                <select name="type" class="form-select">
-                  <option value="all" {% if file_type=='all' %}selected{% endif %}>All Types</option>
-                  <option value="video" {% if file_type=='video' %}selected{% endif %}>Video</option>
-                  <option value="image" {% if file_type=='image' %}selected{% endif %}>Image</option>
-                  <option value="audio" {% if file_type=='audio' %}selected{% endif %}>Audio</option>
-                  <option value="other" {% if file_type=='other' %}selected{% endif %}>Other</option>
-                </select>
-              </div>
-              <div class="col-6 col-md-2">
-                <select name="sort" class="form-select">
-                  <option value="name" {% if sort_by=='name' %}selected{% endif %}>Name</option>
-                  <option value="size" {% if sort_by=='size' %}selected{% endif %}>Size</option>
-                  <option value="mtime" {% if sort_by=='mtime' %}selected{% endif %}>Date</option>
-                </select>
-              </div>
-              <div class="col-6 col-md-2">
-                <select name="order" class="form-select">
-                  <option value="asc" {% if order=='asc' %}selected{% endif %}>Asc</option>
-                  <option value="desc" {% if order=='desc' %}selected{% endif %}>Desc</option>
-                </select>
-              </div>
-              <div class="col-6 col-md-2">
-                <button class="btn-solid" type="submit">
-                  <span>Apply</span>
-                </button>
-              </div>
-            </form>
-          </div>
-
-          <!-- Upload -->
-          <div class="col-12 col-lg-4">
-            <div class="surface surface--sub h-100 d-flex flex-column justify-content-between">
-              <div class="mb-2 d-flex justify-content-between align-items-center">
-                <span class="surface-header-label">Upload</span>
-                <span class="text-xs text-muted">Requires owner approval</span>
-              </div>
-              <form method="post" action="{{ url_for('upload') }}" enctype="multipart/form-data" class="row g-2">
-                <input type="hidden" name="p" value="{{ current_rel }}">
-                <div class="col-12">
-                  <input type="file" name="files" multiple class="form-control">
-                </div>
-                <div class="col-12">
-                  <button class="btn-ghost" type="submit">
-                    <span>Upload for approval</span>
-                  </button>
-                </div>
-              </form>
-            </div>
+      <!-- Quick Stats -->
+      <div class="quick-stats">
+        <div class="stat-box">
+          <div class="stat-icon">📊</div>
+          <div class="stat-info">
+            <div class="stat-value">{{ total_items }}</div>
+            <div class="stat-label">Items</div>
           </div>
         </div>
-
-        <!-- Pending section (admin only) -->
-        {% if is_admin and pending_files %}
-        <div class="pending-section">
-          <div class="d-flex justify-content-between align-items-center mb-2">
-            <div class="text-sm" style="color: var(--warning); font-weight: 500;">
-              ⚠ Pending approvals ({{ pending_count }})
-            </div>
-          </div>
-          <div class="row g-2">
-            {% for p in pending_files %}
-              <div class="col-12 col-md-6 col-xl-4">
-                <div class="pending-card">
-                  <div class="flex-grow-1 me-1">
-                    <div class="pending-name text-truncate">{{ p.relpath }}</div>
-                    <div class="pending-meta">{{ p.size_human }} • {{ p.mtime_str }}</div>
-                  </div>
-                  <div class="pending-actions">
-                    <form method="post" action="{{ url_for('approve_file', filename=p.relpath) }}">
-                      <button type="submit" class="btn-approve" title="Approve">✓</button>
-                    </form>
-                    <form method="post" action="{{ url_for('reject_file', filename=p.relpath) }}" onsubmit="return confirm('Reject this file?');">
-                      <button type="submit" class="btn-reject" title="Reject">✕</button>
-                    </form>
-                  </div>
-                </div>
-              </div>
-            {% endfor %}
+        <div class="stat-box">
+          <div class="stat-icon">💾</div>
+          <div class="stat-info">
+            <div class="stat-value">{{ total_size_human }}</div>
+            <div class="stat-label">Total Size</div>
           </div>
         </div>
-        {% endif %}
-      </section>
+      </div>
 
-      <!-- Content grid -->
-      <section class="mb-5">
-        <div class="row g-3">
-          <!-- Folders -->
+      <!-- Filters & Upload Grid -->
+      <div class="controls-wrapper">
+        
+        <!-- FILTERS CARD -->
+        <div class="control-card">
+          <div class="card-top">
+            <h2>🔍 Browse & Filter</h2>
+          </div>
+          <form method="get" class="filter-form">
+            <input type="hidden" name="p" value="{{ current_rel }}">
+            
+            <input 
+              type="text" 
+              name="q" 
+              value="{{ q or '' }}" 
+              class="search-input" 
+              placeholder="Search files..."
+            >
+            
+            <div class="filter-row">
+              <select name="type" class="filter-select">
+                <option value="all" {% if file_type=='all' %}selected{% endif %}>All Types</option>
+                <option value="video" {% if file_type=='video' %}selected{% endif %}>🎬 Videos</option>
+                <option value="image" {% if file_type=='image' %}selected{% endif %}>🖼️ Images</option>
+                <option value="audio" {% if file_type=='audio' %}selected{% endif %}>🎵 Audio</option>
+                <option value="other" {% if file_type=='other' %}selected{% endif %}>📄 Other</option>
+              </select>
+              
+              <select name="sort" class="filter-select">
+                <option value="name" {% if sort_by=='name' %}selected{% endif %}>Name</option>
+                <option value="size" {% if sort_by=='size' %}selected{% endif %}>Size</option>
+                <option value="mtime" {% if sort_by=='mtime' %}selected{% endif %}>Date</option>
+              </select>
+              
+              <select name="order" class="filter-select">
+                <option value="asc" {% if order=='asc' %}selected{% endif %}>↑ Asc</option>
+                <option value="desc" {% if order=='desc' %}selected{% endif %}>↓ Desc</option>
+              </select>
+              
+              <button type="submit" class="apply-btn">Apply</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- UPLOAD CARD -->
+        <div class="control-card">
+          <div class="card-top">
+            <h2>⬆️ Upload Files</h2>
+            <span class="help-text">Requires approval</span>
+          </div>
+          <form method="post" action="{{ url_for('upload') }}" enctype="multipart/form-data" class="upload-form">
+            <input type="hidden" name="p" value="{{ current_rel }}">
+            <input type="file" name="files" multiple id="file-up" class="file-input">
+            <label for="file-up" class="file-picker">
+              📁 Choose Files
+            </label>
+            <button type="submit" class="upload-btn">Upload</button>
+          </form>
+        </div>
+        
+      </div>
+
+      <!-- PENDING APPROVALS (Admin Only) -->
+      {% if is_admin and pending_files %}
+      <div class="control-card warning-card">
+        <div class="card-top">
+          <h2>⚠️ Pending Approvals</h2>
+          <span class="count-badge">{{ pending_count }}</span>
+        </div>
+        <div class="pending-items">
+          {% for p in pending_files %}
+            <div class="pending-row">
+              <div class="pending-details">
+                <div class="pending-file">{{ p.relpath }}</div>
+                <div class="pending-info">{{ p.size_human }} • {{ p.mtime_str }}</div>
+              </div>
+              <div class="pending-btns">
+                <form method="post" action="{{ url_for('approve_file', filename=p.relpath) }}" style="display:inline">
+                  <button class="action-btn approve-btn">✓</button>
+                </form>
+                <form method="post" action="{{ url_for('reject_file', filename=p.relpath) }}" onsubmit="return confirm('Reject?')" style="display:inline">
+                  <button class="action-btn reject-btn">✕</button>
+                </form>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- MEDIA LIBRARY -->
+      {% if folders or files %}
+        <div class="library-grid">
+          
+          <!-- FOLDERS -->
           {% for d in folders %}
-            <div class="col-12 col-sm-6 col-lg-4 col-xl-3">
-              <a href="{{ url_for('index', p=d.relpath) }}" class="file-folder">
-                <div class="file-icon">📁</div>
-                <div class="flex-grow-1 overflow-hidden">
-                  <div class="file-folder-name">{{ d.name }}</div>
-                  <div class="file-folder-meta">{{ d.items_count }} items</div>
-                </div>
-              </a>
-            </div>
+            <a href="{{ url_for('index', p=d.relpath) }}" class="media-card folder-card">
+              <div class="card-icon">📁</div>
+              <div class="card-body">
+                <h3 class="card-title">{{ d.name }}</h3>
+                <p class="card-subtitle">{{ d.items_count }} items</p>
+              </div>
+            </a>
           {% endfor %}
 
-          <!-- Files -->
+          <!-- FILES -->
           {% for f in files %}
-            <div class="col-12 col-sm-6 col-lg-4 col-xl-3">
-              <article class="file-card">
-                <header class="file-card-header">
-                  <div class="file-icon">
-                    {% if f.is_video %}🎬{% elif f.is_image %}🖼️{% elif f.is_audio %}🎵{% else %}📄{% endif %}
-                  </div>
-                  <span class="badge-type">{{ f.ext or "file" }}</span>
-                </header>
-                <div>
-                  <div class="file-name" title="{{ f.name }}">{{ f.name }}</div>
-                  <div class="file-meta">
-                    {{ f.size_human }} • {{ f.mtime_str }}
-                  </div>
+            <div class="media-card file-card">
+              <div class="card-header">
+                <div class="file-icon">
+                  {% if f.is_video %}🎬
+                  {% elif f.is_image %}🖼️
+                  {% elif f.is_audio %}🎵
+                  {% else %}📄{% endif %}
                 </div>
-                <div class="file-actions">
-                  {% if f.is_video %}
-                    <a href="{{ url_for('stream_page', filename=f.relpath) }}" class="btn-solid">Play</a>
-                  {% elif f.is_image %}
-                    <a href="{{ url_for('download_file', filename=f.relpath) }}" target="_blank" class="btn-solid">View</a>
-                  {% else %}
-                    <a href="{{ url_for('download_file', filename=f.relpath) }}" download class="btn-ghost">Download</a>
-                  {% endif %}
-
-                  {% if is_admin %}
-                    <form method="post" action="{{ url_for('delete_file', filename=f.relpath, p=current_rel) }}" onsubmit="return confirm('Delete {{ f.name }}?');">
-                      <button type="submit" class="btn-danger-outline" title="Delete">
-                        🗑
-                      </button>
-                    </form>
-                  {% endif %}
-                </div>
-              </article>
-            </div>
-          {% endfor %}
-
-          {% if not folders and not files %}
-            <div class="col-12">
-              <div class="surface surface--sub empty-state">
-                <div class="empty-icon">📂</div>
-                <p class="mt-3 mb-1">This folder is empty</p>
-                <p class="text-xs text-muted mb-0">Upload files to get started.</p>
+                <span class="file-type">{{ f.ext or "file" }}</span>
+              </div>
+              <div class="card-body">
+                <h3 class="card-title" title="{{ f.name }}">{{ f.name }}</h3>
+                <p class="card-subtitle">{{ f.size_human }} • {{ f.mtime_str }}</p>
+              </div>
+              <div class="card-actions">
+                {% if f.is_video %}
+                  <a href="{{ url_for('stream_page', filename=f.relpath) }}" class="primary-action">▶ Play</a>
+                {% elif f.is_image %}
+                  <a href="{{ url_for('download_file', filename=f.relpath) }}" target="_blank" class="primary-action">👁 View</a>
+                {% else %}
+                  <a href="{{ url_for('download_file', filename=f.relpath) }}" download class="secondary-action">⬇ Download</a>
+                {% endif %}
+                
+                {% if is_admin %}
+                  <form method="post" action="{{ url_for('delete_file', filename=f.relpath, p=current_rel) }}" onsubmit="return confirm('Delete?')" style="display:inline">
+                    <button class="icon-action delete-action">🗑</button>
+                  </form>
+                {% endif %}
               </div>
             </div>
-          {% endif %}
-        </div>
-      </section>
-    </div>
-  </main>
+          {% endfor %}
 
-  <!-- Theme JS -->
+        </div>
+      {% else %}
+        <!-- EMPTY STATE -->
+        <div class="empty-box">
+          <div class="empty-icon">📂</div>
+          <h3 class="empty-heading">This folder is empty</h3>
+          <p class="empty-subtext">Upload files to get started</p>
+        </div>
+      {% endif %}
+
+    </div>
+  </div>
+
   <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
 </html>

@@ -29,7 +29,7 @@ from werkzeug.serving import make_server
 app = Flask(__name__)
 
 APP_CONFIG = {
-    "base_dir": Path.cwd() / "files",
+    "base_dir": Path(__file__).parent / "files",
     "host": "0.0.0.0",
     "port": 4142,
     "password": "",  # فاضي = بدون باسورد
