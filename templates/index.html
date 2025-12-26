@@ -204,9 +204,14 @@
                 {% elif f.type == 'image' %}
                   <a href="{{ url_for('download_file', filename=f.relpath) }}" target="_blank" class="primary-action">👁 View</a>
                 {% else %}
+                  <a href="{{ url_for('download_file', filename=f.relpath) }}" download class="primary-action">⬇ Download</a>
+                {% endif %}
+
+                {# Always show a download button for playable/viewable files #}
+                {% if f.type in ['video', 'audio', 'image'] %}
                   <a href="{{ url_for('download_file', filename=f.relpath) }}" download class="secondary-action">⬇ Download</a>
                 {% endif %}
-                
+
                 {% if is_admin %}
                   <form method="post" action="{{ url_for('delete_file', filename=f.relpath, p=current_rel) }}" onsubmit="return confirm('Delete?')" style="display:inline">
                     <button class="icon-action delete-action">🗑</button>

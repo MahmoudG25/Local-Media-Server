@@ -4,10 +4,16 @@ from typing import Optional
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
     QLineEdit, QPushButton, QFileDialog, QMessageBox,
-    QDialog, QListWidget, QDialogButtonBox, QFormLayout
+    QDialog, QListWidget, QDialogButtonBox, QFormLayout, QApplication
 )
-from PySide6.QtCore import Qt, Slot
+from PySide6.QtCore import Qt, Slot, QThread, Signal
 from PySide6.QtGui import QFont
+import socket
+import webbrowser
+import urllib.request
+import urllib.error
+import urllib.parse
+import base64
 
 from config import AppConfig
 from server import ServerThread, ServerSignals
@@ -116,6 +122,47 @@ class UploadDialog(QDialog):
             self.reject()
 
 
+class DownloadThread(QThread):
+    """Thread to download a remote file without blocking the UI."""
+    progress = Signal(int)  # percent
+    finished = Signal(bool, str)  # success, message
+
+    def __init__(self, url: str, dest_path: str, auth: Optional[str] = None):
+        super().__init__()
+        self.url = url
+        self.dest_path = dest_path
+        self.auth = auth
+
+    def run(self):
+        try:
+            req = urllib.request.Request(self.url)
+            if self.auth:
+                # auth is 'username:password' (username is 'user')
+                token = base64.b64encode(self.auth.encode()).decode()
+                req.add_header("Authorization", f"Basic {token}")
+
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                total = resp.getheader("Content-Length")
+                total = int(total) if total and total.isdigit() else None
+                chunk_size = 8192
+                downloaded = 0
+                with open(self.dest_path, "wb") as out:
+                    while True:
+                        chunk = resp.read(chunk_size)
+                        if not chunk:
+                            break
+                        out.write(chunk)
+                        downloaded += len(chunk)
+                        if total:
+                            percent = int(downloaded * 100 / total)
+                            self.progress.emit(percent)
+            self.finished.emit(True, "Download completed")
+        except urllib.error.HTTPError as e:
+            self.finished.emit(False, f"HTTP Error: {e.code} {e.reason}")
+        except Exception as e:
+            self.finished.emit(False, str(e))
+
+
 class MainWindow(QMainWindow):
     """Main window for the Local Media Server GUI."""
     
@@ -211,7 +258,40 @@ class MainWindow(QMainWindow):
         self.url_label.setStyleSheet("color: green;")
         self.url_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         layout.addWidget(self.url_label)
-        
+
+        # Action buttons next to URL
+        url_buttons = QHBoxLayout()
+        self.open_btn = QPushButton("Open in browser")
+        self.open_btn.clicked.connect(self.open_in_browser)
+        self.open_btn.setEnabled(False)
+        url_buttons.addWidget(self.open_btn)
+
+        self.copy_btn = QPushButton("Copy URL")
+        self.copy_btn.clicked.connect(self.copy_url)
+        self.copy_btn.setEnabled(False)
+        url_buttons.addWidget(self.copy_btn)
+
+        url_buttons.addStretch()
+        layout.addLayout(url_buttons)
+
+        # Download controls
+        download_layout = QHBoxLayout()
+        download_layout.addWidget(QLabel("Remote file (relative):"))
+        self.remote_path_input = QLineEdit()
+        self.remote_path_input.setPlaceholderText("e.g. movies/movie.mp4")
+        download_layout.addWidget(self.remote_path_input)
+
+        self.download_btn = QPushButton("Download")
+        self.download_btn.clicked.connect(self.download_remote_file)
+        self.download_btn.setEnabled(False)
+        download_layout.addWidget(self.download_btn)
+
+        layout.addLayout(download_layout)
+
+        self.download_status_label = QLabel("")
+        self.download_status_label.setStyleSheet("color: gray;")
+        layout.addWidget(self.download_status_label)
+
         layout.addStretch()
     
     def browse_folder(self):
@@ -273,6 +353,12 @@ class MainWindow(QMainWindow):
         
         self.start_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
+
+        # Save current URL for quick actions
+        self.current_url = url_display
+        self.open_btn.setEnabled(True)
+        self.copy_btn.setEnabled(True)
+        self.download_btn.setEnabled(True)
     
     def stop_server(self):
         """Stop the Flask server."""
@@ -289,9 +375,72 @@ class MainWindow(QMainWindow):
         self.status_label.setText("Server status: stopped")
         self.status_label.setStyleSheet("color: blue; font-weight: bold;")
         self.url_label.setText("")
-        
+        self.current_url = None
+        self.open_btn.setEnabled(False)
+        self.copy_btn.setEnabled(False)
+        self.download_btn.setEnabled(False)
+        self.download_status_label.setText("")
+
         self.start_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
+
+    def open_in_browser(self):
+        """Open server URL in default browser."""
+        if not getattr(self, "current_url", None):
+            return
+        webbrowser.open(self.current_url)
+
+    def copy_url(self):
+        """Copy server URL to clipboard."""
+        if not getattr(self, "current_url", None):
+            return
+        QApplication.clipboard().setText(self.current_url)
+        QMessageBox.information(self, "Copied", "Server URL copied to clipboard.")
+
+    def download_remote_file(self):
+        """Download a remote file from the running server."""
+        if not getattr(self, "current_url", None):
+            QMessageBox.warning(self, "Warning", "Server is not running.")
+            return
+
+        path = self.remote_path_input.text().strip()
+        if not path:
+            QMessageBox.warning(self, "Warning", "Please enter the remote file path to download (relative).")
+            return
+
+        if path.startswith("/"):
+            path = path[1:]
+
+        encoded = urllib.parse.quote(path, safe="/")
+        url = f"{self.current_url}/download/{encoded}"
+
+        suggested = Path(path).name
+        dest, _ = QFileDialog.getSaveFileName(self, "Save file as", suggested)
+        if not dest:
+            return
+
+        auth = None
+        if self.config and getattr(self.config, "password", ""):
+            auth = f"user:{self.config.password}"
+
+        self.download_thread = DownloadThread(url, dest, auth)
+        self.download_thread.progress.connect(self.on_download_progress)
+        self.download_thread.finished.connect(self.on_download_finished)
+        self.download_btn.setEnabled(False)
+        self.download_status_label.setText("Starting download...")
+        self.download_thread.start()
+
+    def on_download_progress(self, percent: int):
+        self.download_status_label.setText(f"Downloading: {percent}%")
+
+    def on_download_finished(self, success: bool, message: str):
+        self.download_btn.setEnabled(True)
+        if success:
+            self.download_status_label.setText("Download completed")
+            QMessageBox.information(self, "Download", "File downloaded successfully.")
+        else:
+            self.download_status_label.setText(f"Error: {message}")
+            QMessageBox.critical(self, "Download Error", message)
     
     def get_local_ip(self) -> str:
         """Get the local IP address of this machine."""
